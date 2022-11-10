@@ -16,7 +16,7 @@ end
 # Node definitions
 NODES  = { :nameprefix => "node-",  # node-1, node-2, ...
               :subnet => "10.161.0",
-              :ip_offset => 100,  # nodes get IP addresses: 10.0.1.101, .102, .103, etc
+              :ip_offset => 100,  # nodes get IP addresses: 10.161.0.100, .101, .102, etc.
               }
 
 # Number of nodes to start:

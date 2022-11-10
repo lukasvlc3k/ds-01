@@ -51,12 +51,16 @@ class ClusterNode:
 
         self.election_in_progress = True
 
-        if self.node_id == self.cluster.nodes_count - 1:
-            # current node has the highest ID
-            self.call_me_leader()
-        else:
-            self.send_to_higher(self.create_message(MessageType.ELECTION, str(self.node_id)))
-            self.call_me_leader_timeout = create_timeout(CALL_ME_LEADER_TIMEOUT, self.call_me_leader)
+        self.send_to_higher(self.create_message(MessageType.ELECTION, str(self.node_id)))
+        self.call_me_leader_timeout = create_timeout(CALL_ME_LEADER_TIMEOUT, self.call_me_leader)
+
+        return
+        # if self.node_id == self.cluster.nodes_count - 1:
+        #    # current node has the highest ID
+        #    self.call_me_leader()
+        # else:
+        #    self.send_to_higher(self.create_message(MessageType.ELECTION, str(self.node_id)))
+        #    self.call_me_leader_timeout = create_timeout(CALL_ME_LEADER_TIMEOUT, self.call_me_leader)
 
     def cancel_call_me_leader_timer(self):
         if self.call_me_leader_timeout is not None:
