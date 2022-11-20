@@ -16,7 +16,8 @@ class MessageType(Enum):
     VICTORY = 3,
     COLOR = 4,
     PING = 5,
-    PONG = 6
+    PONG = 6,
+    INFORM = 7
 
 
 class Message:

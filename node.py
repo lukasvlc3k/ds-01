@@ -17,6 +17,12 @@ class ClusterNode:
         self.election_reset_timeout: Optional[threading.Timer] = None
         self.election_in_progress = False
 
+        self.ping_leader_timer: threading.Timer = create_timeout(PING_INTERVAL, self.ping_leader)
+        self.ping_leader_timeout: Optional[threading.Timer] = None
+
+        self.inform_timer: threading.Timer = create_timeout(INFORM_INTERVAL, self.inform)
+        self.check_leader_timer: threading.Timer = create_timeout(CHECK_LEADER_INTERVAL, self.check_leader)
+
         log("init")
         self.log_current_state()
 
@@ -25,6 +31,10 @@ class ClusterNode:
 
     def get_lower_ids(self) -> List[int]:
         return self.cluster.get_lower_ids(self.node_id)
+
+    def send_to_all(self, message: Message):
+        for ip in self.cluster.ips:
+            send_message(ip, message)
 
     def send_to_higher(self, message: Message):
         for ip in self.cluster.convert_to_ips(self.get_higher_ids()):
@@ -36,6 +46,35 @@ class ClusterNode:
 
     def create_message(self, type: MessageType, data: str):
         return Message(type, self.node_id, data)
+
+    def ping_leader(self):
+        if self.cluster.leader is not None:
+            send_message(self.cluster.ips[self.cluster.leader], Message(MessageType.PING, self.node_id, "ping"))
+            self.ping_leader_timeout = create_timeout(LEADER_PING_TIMEOUT, self.leader_timeout)
+
+        self.ping_leader_timer = create_timeout(PING_INTERVAL, self.ping_leader)
+
+    def leader_timeout(self):
+        log("LEADE LOST...")
+        self.start_election()
+
+    def inform(self):
+        self.inform_timer = create_timeout(INFORM_INTERVAL, self.inform)
+
+        if self.cluster.leader is not None:
+            msg: Message = Message(MessageType.INFORM, self.node_id, str(self.cluster.leader))
+            self.send_to_all(msg)
+
+    def check_leader(self):
+        self.check_leader_timer = create_timeout(CHECK_LEADER_INTERVAL, self.check_leader)
+
+        if self.cluster.leader is None:
+            log("NO LEADER FOUND")
+            self.start_election()
+
+    def cancel_leader_timeout(self):
+        if self.ping_leader_timeout is not None:
+            self.ping_leader_timeout.cancel()
 
     def call_me_leader(self):
         self.send_to_lower(self.create_message(MessageType.VICTORY, str(self.node_id)))
@@ -74,8 +113,8 @@ class ClusterNode:
         log("- current state: color: " + str(self.color) + ", leader: " + str(self.cluster.leader))
 
     def handle_message(self, message: Message):
-        log("\thandling message: sender: " + str(message.sender) + ", type: " + str(
-            message.type) + ", value: " + message.data)
+        # log("\thandling message: sender: " + str(message.sender) + ", type: " + str(
+        #     message.type) + ", value: " + message.data)
 
         if message.type == MessageType.ANSWER:
             if message.sender > self.node_id:
@@ -112,10 +151,29 @@ class ClusterNode:
                 self.color = message.data
                 log("new color assigned: " + self.color)
                 self.log_current_state()
+
+                self.log_current_state()
                 self.election_in_progress = False
 
         if message.type == MessageType.PING:
             send_message(self.cluster.ips[message.sender], Message(MessageType.PONG, self.node_id, ""))
 
         if message.type == MessageType.PONG:
+            if message.sender == self.cluster.leader:
+                # log("PONG received from leader")
+                self.cancel_leader_timeout()
+
             self.cluster.pong_received(message.sender)
+
+        if message.type == MessageType.INFORM:
+            leader_received = int(message.data)
+            if self.cluster.leader is None:
+                self.cluster.leader_changed(leader_received)
+                log("leader set from INFORM message")
+                self.log_current_state()
+
+            if self.cluster.leader != leader_received:
+                log("Leader mismatch - received: " + str(leader_received) + ", current: " + str(self.cluster.leader))
+                self.log_current_state()
+
+                self.start_election()

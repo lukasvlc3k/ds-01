@@ -45,6 +45,6 @@ server_thread = threading.Thread(target=start_server)
 server_thread.daemon = True
 server_thread.start()
 
-node.start_election()
+# node.start_election()
 
 server_thread.join()

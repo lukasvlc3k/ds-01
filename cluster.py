@@ -1,9 +1,11 @@
 import math
+import threading
 from typing import List, Optional
 
 from consts import *
 from messaging import send_message, Message, MessageType
 from utils import create_timeout, log
+import copy
 
 
 class Cluster:
@@ -20,6 +22,7 @@ class Cluster:
         self.alive = [False for i in range(self.nodes_count)]
 
         self.color_nodes_timer = None
+        self.colors_check_timer: threading.Timer = create_timeout(COLORS_CHECK_INTERVAL, self.color_check)
 
     def get_higher_ids(self, higher_than) -> List[int]:
         return [i for i in range(higher_than + 1, self.nodes_count)]
@@ -32,6 +35,11 @@ class Cluster:
 
     def leader_changed(self, new_leader):
         self.leader = new_leader
+        self.color_check()
+
+    def color_check(self):
+        self.colors_check_timer: threading.Timer = create_timeout(COLORS_CHECK_INTERVAL, self.color_check)
+
         if self.leader == self.current_node:
             self.check_alive()
             self.color_nodes_timer = create_timeout(ALIVE_TIMEOUT, self.color_nodes)  # check for check alive to finish
@@ -59,7 +67,9 @@ class Cluster:
 
         green_nodes_left = math.ceil(total_live * GREEN_COLOR_REQUIRED)
 
-        self.colors[self.leader] = "GREEN"  # leader always green
+        new_colors = [None for i in range(self.nodes_count)]
+
+        new_colors[self.leader] = "GREEN"  # leader always green
         green_nodes_left -= 1
 
         for i in range(self.nodes_count):
@@ -68,11 +78,15 @@ class Cluster:
 
             if self.alive[i]:
                 if i < green_nodes_left:
-                    self.colors[i] = "GREEN"
+                    new_colors[i] = "GREEN"
                     green_nodes_left -= 1
                 else:
-                    self.colors[i] = "RED"
+                    new_colors[i] = "RED"
             else:
-                self.colors[i] = "-"
+                new_colors[i] = "-"
 
-        log("new colors assigned: " + str(self.colors))
+        if self.colors == new_colors:
+            log("coloring ok")
+        else:
+            self.colors = new_colors
+            log("new colors assigned: " + str(self.colors))
