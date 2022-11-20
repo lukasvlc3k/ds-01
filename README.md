@@ -16,6 +16,18 @@ je jako předáván parametr IP_OFFSET, který určuje IP adresu prvního nodu. 
 systém předpokládá, že jsou IP adresy všech nodů za sebou, každou IP adresu je tedy možné dopočítat přičtením
 čísla nodu k IP_OFFSET.
 
+### Zpráva INFORM
+Každý node posílá na všechny nody zprávu INFORM, ve které se nachází číslo leadera daného nodu. 
+Pokud node obdrží zprávu INFORM, tak:
+
+- a) v případě, že zatím žádného leadera nemá (po spuštění) přebere nastavení tohoto leadera
+- b) zkontroluje, zda číslo leadera odpovídá jemu známému leaderovi. Pokud ano, žádná další akce se nekoná. Pokud ne,
+došlo k situaci, kdy jsou na scéně 2 leadeři. V takovém případě se spustí nové volby.
+
+### Po spuštění
+Node po spuštění čeká dobu definovanou jako CHECK_LEADER_INTERVAL. Pokud od jiného nodu
+obdrží zprávu INFORM (viz výše), přebere leadera. Pokud ne, spustí volby.
+
 ### Algoritmus volby
 
 Existují 3 základní zprávy:
@@ -37,8 +49,11 @@ Při spuštění nodu P (nebo v budoucnu ve chvíli, kdy dojde k obnově P), P v
 
 ### Zjištění stavu nodů
 
-Poté, co je zvolen nový leader, vyšle tento nový leader zprávu typu PING na všechny nody. Jakmile jakýkoliv node
-obdrží zprávu tohoto typu, okamžitě odpoví zprávou typu PONG. Při obdržení zprávy PONG je node označen za živého.
+Leader periodicky (COLORS_CHECK_INTERVAL) kontroluje stav všech nodů - vyšle zprávu typu PING.
+Jakmile jakýkoliv node obdrží zprávu tohoto typu, okamžitě odpoví zprávou typu PONG. Při obdržení zprávy PONG je node označen za živého.
+
+Leader následně zkontroluje, zda obarvení živých nodů odpovídá pravidlům. Pokud ano, žádná další akce se neděje, pokud ne, rozešle
+nodům nová obarvení.
 
 ## Spuštění
 

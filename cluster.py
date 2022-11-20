@@ -56,10 +56,11 @@ class Cluster:
         if self.leader is None:
             return
 
-        self.__determine_coloring()
+        changed = self.__determine_coloring()
 
-        for i in range(self.nodes_count):
-            send_message(self.ips[i], Message(MessageType.COLOR, self.current_node, self.colors[i]))
+        if changed:
+            for i in range(self.nodes_count):
+                send_message(self.ips[i], Message(MessageType.COLOR, self.current_node, self.colors[i]))
 
     def __determine_coloring(self):
         total_live = self.alive.count(True)
@@ -87,6 +88,10 @@ class Cluster:
 
         if self.colors == new_colors:
             log("coloring ok")
+            log(str(self.colors))
+            return False
         else:
             self.colors = new_colors
-            log("new colors assigned: " + str(self.colors))
+            log("new colors assigned")
+            log(str(self.colors))
+            return True

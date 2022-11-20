@@ -48,20 +48,20 @@ class ClusterNode:
         return Message(type, self.node_id, data)
 
     def ping_leader(self):
-        if self.cluster.leader is not None:
+        if self.cluster.leader is not None and not self.election_in_progress:
             send_message(self.cluster.ips[self.cluster.leader], Message(MessageType.PING, self.node_id, "ping"))
             self.ping_leader_timeout = create_timeout(LEADER_PING_TIMEOUT, self.leader_timeout)
 
         self.ping_leader_timer = create_timeout(PING_INTERVAL, self.ping_leader)
 
     def leader_timeout(self):
-        log("LEADE LOST...")
-        self.start_election()
+        log("LEADER NOT AVAILABLE...")
+        self.start_election("Leader not available")
 
     def inform(self):
         self.inform_timer = create_timeout(INFORM_INTERVAL, self.inform)
 
-        if self.cluster.leader is not None:
+        if self.cluster.leader is not None and not self.election_in_progress:
             msg: Message = Message(MessageType.INFORM, self.node_id, str(self.cluster.leader))
             self.send_to_all(msg)
 
@@ -70,22 +70,29 @@ class ClusterNode:
 
         if self.cluster.leader is None:
             log("NO LEADER FOUND")
-            self.start_election()
+            self.start_election("leader is None")
 
     def cancel_leader_timeout(self):
         if self.ping_leader_timeout is not None:
             self.ping_leader_timeout.cancel()
 
     def call_me_leader(self):
+        self.election_in_progress = False
         self.send_to_lower(self.create_message(MessageType.VICTORY, str(self.node_id)))
         self.cluster.leader_changed(self.node_id)
 
         log("I WAS SELECTED AS A LEADER")
         self.log_current_state()
-        self.election_in_progress = False
 
-    def start_election(self):
-        log("no leader, election started")
+    def start_election(self, reason: str):
+        if self.election_in_progress:
+            log("election already in progress")
+            return
+
+        self.cancel_call_me_leader_timer()
+        self.cancel_election_reset_timer()
+
+        log("election started, reason: " + reason)
         self.log_current_state()
 
         self.election_in_progress = True
@@ -102,6 +109,7 @@ class ClusterNode:
         #    self.call_me_leader_timeout = create_timeout(CALL_ME_LEADER_TIMEOUT, self.call_me_leader)
 
     def cancel_call_me_leader_timer(self):
+        log("call me leader timer cancelled")
         if self.call_me_leader_timeout is not None:
             self.call_me_leader_timeout.cancel()
 
@@ -112,6 +120,13 @@ class ClusterNode:
     def log_current_state(self):
         log("- current state: color: " + str(self.color) + ", leader: " + str(self.cluster.leader))
 
+    def reset_election(self):
+        self.cancel_call_me_leader_timer()
+        self.cancel_election_reset_timer()
+
+        self.election_in_progress = False
+        self.start_election("Reset election")
+
     def handle_message(self, message: Message):
         # log("\thandling message: sender: " + str(message.sender) + ", type: " + str(
         #     message.type) + ", value: " + message.data)
@@ -120,22 +135,20 @@ class ClusterNode:
             if message.sender > self.node_id:
                 self.cancel_call_me_leader_timer()
                 self.cancel_election_reset_timer()
-                self.election_reset_timeout = create_timeout(ELECTION_RESET_TIMEOUT, self.start_election)
+                self.election_reset_timeout = create_timeout(ELECTION_RESET_TIMEOUT, self.reset_election)
 
-                log("I won't be leader, there is a node with higher id...")
+                log("I won't be leader, there is a node with higher id (" + str(message.sender) + ")...")
                 self.log_current_state()
 
         if message.type == MessageType.ELECTION:
             if message.sender < self.node_id:
                 send_message(self.cluster.ips[message.sender], self.create_message(MessageType.ANSWER, ""))
 
-                self.cancel_call_me_leader_timer()
-                self.cancel_election_reset_timer()
                 log("someone with lower id tries to be leader. Prevented.")
                 self.log_current_state()
 
                 if not self.election_in_progress:
-                    self.start_election()
+                    self.start_election("ELECTION message received from lower node")
 
         if message.type == MessageType.VICTORY:
             self.cluster.leader_changed(message.sender)
@@ -167,13 +180,14 @@ class ClusterNode:
 
         if message.type == MessageType.INFORM:
             leader_received = int(message.data)
-            if self.cluster.leader is None:
+            if self.cluster.leader is None or (self.election_in_progress and self.cluster.leader != leader_received):
                 self.cluster.leader_changed(leader_received)
                 log("leader set from INFORM message")
                 self.log_current_state()
+                self.election_in_progress = False
 
             if self.cluster.leader != leader_received:
                 log("Leader mismatch - received: " + str(leader_received) + ", current: " + str(self.cluster.leader))
                 self.log_current_state()
 
-                self.start_election()
+                self.start_election("Leader mismatch")
